@@ -1,0 +1,877 @@
+import React, { useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ArrowRight, TrendingDown, Users, DollarSign, AlertTriangle } from 'lucide-react';
+
+const CapTableSimulation = () => {
+  const [round, setRound] = useState(0);
+  const [decisions, setDecisions] = useState({
+    seedOptionPoolTiming: null,
+    seriesAPoolIncrease: null,
+    downRoundParticipation: {}
+  });
+  
+  const [capTable, setCapTable] = useState({
+    authorizedShares: 10000000,
+    founders: [
+      { name: 'Sarah Chen', role: 'CEO', shares: 4000000, percentage: 40 },
+      { name: 'Mike Rodriguez', role: 'CTO', shares: 3500000, percentage: 35 },
+      { name: 'Priya Patel', role: 'COO', shares: 2500000, percentage: 25 }
+    ],
+    optionPool: { allocated: 0, reserved: 0 },
+    investors: []
+  });
+
+  const [showCalculations, setShowCalculations] = useState(false);
+
+  // Calculate fully diluted shares
+  const calculateFullyDiluted = (table) => {
+    const founderShares = table.founders.reduce((sum, f) => sum + f.shares, 0);
+    const investorShares = table.investors.reduce((sum, inv) => sum + inv.shares, 0);
+    const optionShares = table.optionPool.reserved;
+    return founderShares + investorShares + optionShares;
+  };
+
+  // Seed Round Handler
+  const handleSeedRound = (optionPoolTiming) => {
+    setDecisions({ ...decisions, seedOptionPoolTiming: optionPoolTiming });
+    
+    const investment = 1500000;
+    const preMoney = 4500000;
+    const optionPoolPercent = 0.15;
+    
+    let newCapTable = { ...capTable };
+    let totalShares = 10000000;
+    
+    if (optionPoolTiming === 'pre-money') {
+      // Option pool dilutes founders before investment
+      const optionShares = Math.round(totalShares * optionPoolPercent / (1 - optionPoolPercent));
+      newCapTable.optionPool.reserved = optionShares;
+      totalShares += optionShares;
+      
+      // Now calculate investor shares
+      const postMoney = preMoney + investment;
+      const investorOwnership = investment / postMoney;
+      const investorShares = Math.round(totalShares * investorOwnership / (1 - investorOwnership));
+      
+      newCapTable.investors.push({
+        name: 'Seed Angels',
+        round: 'Seed',
+        shares: investorShares,
+        investment: investment,
+        pricePerShare: investment / investorShares,
+        liquidationPreference: '1x non-participating',
+        preferenceAmount: investment
+      });
+      
+      totalShares += investorShares;
+      
+    } else {
+      // Post-money: investment happens first, then option pool
+      const postMoney = preMoney + investment;
+      const investorOwnership = investment / postMoney;
+      const investorShares = Math.round(totalShares * investorOwnership / (1 - investorOwnership));
+      
+      newCapTable.investors.push({
+        name: 'Seed Angels',
+        round: 'Seed',
+        shares: investorShares,
+        investment: investment,
+        pricePerShare: investment / investorShares,
+        liquidationPreference: '1x non-participating',
+        preferenceAmount: investment
+      });
+      
+      totalShares += investorShares;
+      
+      // Now add option pool
+      const optionShares = Math.round(totalShares * optionPoolPercent / (1 - optionPoolPercent));
+      newCapTable.optionPool.reserved = optionShares;
+      totalShares += optionShares;
+    }
+    
+    // Update founder percentages
+    newCapTable.founders = newCapTable.founders.map(f => ({
+      ...f,
+      percentage: (f.shares / totalShares * 100).toFixed(2)
+    }));
+    
+    setCapTable(newCapTable);
+    setRound(1);
+  };
+
+  // Series A Handler
+  const handleSeriesA = (increasePool) => {
+    setDecisions({ ...decisions, seriesAPoolIncrease: increasePool });
+    
+    let newCapTable = { ...capTable };
+    let totalShares = calculateFullyDiluted(newCapTable);
+    
+    if (increasePool) {
+      // Increase pool from 15% to 18%
+      const currentPoolPercent = newCapTable.optionPool.reserved / totalShares;
+      const targetPoolPercent = 0.18;
+      const additionalPoolShares = Math.round(
+        (totalShares * targetPoolPercent / (1 - targetPoolPercent)) - newCapTable.optionPool.reserved
+      );
+      newCapTable.optionPool.reserved += additionalPoolShares;
+      newCapTable.optionPool.allocated = Math.round(newCapTable.optionPool.reserved * 0.05);
+      totalShares += additionalPoolShares;
+    }
+    
+    const investment = 8000000;
+    const preMoney = 20000000;
+    const postMoney = preMoney + investment;
+    const investorOwnership = investment / postMoney;
+    const investorShares = Math.round(totalShares * investorOwnership / (1 - investorOwnership));
+    
+    newCapTable.investors.push({
+      name: 'Summit Ventures',
+      round: 'Series A',
+      shares: investorShares,
+      investment: investment,
+      pricePerShare: investment / investorShares,
+      liquidationPreference: '1x participating',
+      preferenceAmount: investment,
+      antiDilution: 'broad-based weighted average'
+    });
+    
+    totalShares += investorShares;
+    
+    // Update percentages
+    newCapTable.founders = newCapTable.founders.map(f => ({
+      ...f,
+      percentage: (f.shares / totalShares * 100).toFixed(2)
+    }));
+    
+    newCapTable.investors = newCapTable.investors.map(inv => ({
+      ...inv,
+      percentage: (inv.shares / totalShares * 100).toFixed(2)
+    }));
+    
+    setCapTable(newCapTable);
+    setRound(2);
+  };
+
+  // Series B Down Round Handler
+  const handleSeriesB = (participation) => {
+    setDecisions({ ...decisions, downRoundParticipation: participation });
+    
+    let newCapTable = { ...capTable };
+    let totalShares = calculateFullyDiluted(newCapTable);
+    
+    const investment = 5000000;
+    const preMoney = 18000000;
+    const postMoney = preMoney + investment;
+    
+    // Handle anti-dilution for Series A (weighted average)
+    const seriesAInvestor = newCapTable.investors.find(inv => inv.round === 'Series A');
+    if (seriesAInvestor && seriesAInvestor.antiDilution === 'broad-based weighted average') {
+      const oldPrice = seriesAInvestor.pricePerShare;
+      const newPrice = preMoney / totalShares;
+      
+      // Simplified weighted average calculation
+      const commonShares = newCapTable.founders.reduce((sum, f) => sum + f.shares, 0);
+      const newConversionPrice = (
+        (oldPrice * seriesAInvestor.shares) + 
+        (newPrice * (investment / newPrice))
+      ) / (seriesAInvestor.shares + (investment / newPrice));
+      
+      const additionalShares = Math.round(
+        seriesAInvestor.shares * (oldPrice / newConversionPrice - 1)
+      );
+      
+      seriesAInvestor.shares += additionalShares;
+      seriesAInvestor.antiDilutionAdjustment = additionalShares;
+      totalShares += additionalShares;
+    }
+    
+    // Add Series B investment
+    const investorOwnership = investment / postMoney;
+    const investorShares = Math.round(totalShares * investorOwnership / (1 - investorOwnership));
+    
+    newCapTable.investors.push({
+      name: 'Phoenix Capital',
+      round: 'Series B',
+      shares: investorShares,
+      investment: investment,
+      pricePerShare: investment / investorShares,
+      liquidationPreference: '2x non-participating',
+      preferenceAmount: investment * 2,
+      antiDilution: 'full ratchet'
+    });
+    
+    totalShares += investorShares;
+    
+    // Handle pay-to-play for Series A
+    if (participation.summitVentures) {
+      const additionalInvestment = 2000000;
+      const additionalShares = Math.round(additionalInvestment / (investment / investorShares));
+      seriesAInvestor.shares += additionalShares;
+      seriesAInvestor.investment += additionalInvestment;
+      seriesAInvestor.followOn = additionalInvestment;
+      totalShares += additionalShares;
+    }
+    
+    // Sarah's personal investment
+    if (participation.sarah) {
+      const sarahInvestment = 500000;
+      const sarahAdditionalShares = Math.round(sarahInvestment / (investment / investorShares));
+      const sarah = newCapTable.founders.find(f => f.name === 'Sarah Chen');
+      sarah.shares += sarahAdditionalShares;
+      sarah.personalInvestment = sarahInvestment;
+      totalShares += sarahAdditionalShares;
+    }
+    
+    // Convert non-participating angels to common (penalty for not participating)
+    const seedInvestor = newCapTable.investors.find(inv => inv.round === 'Seed');
+    if (seedInvestor && !participation.seedAngels) {
+      seedInvestor.convertedToCommon = true;
+      seedInvestor.liquidationPreference = 'none (converted to common)';
+      seedInvestor.preferenceAmount = 0;
+    }
+    
+    // Update all percentages
+    newCapTable.founders = newCapTable.founders.map(f => ({
+      ...f,
+      percentage: (f.shares / totalShares * 100).toFixed(2)
+    }));
+    
+    newCapTable.investors = newCapTable.investors.map(inv => ({
+      ...inv,
+      percentage: (inv.shares / totalShares * 100).toFixed(2)
+    }));
+    
+    newCapTable.optionPool.percentage = (newCapTable.optionPool.reserved / totalShares * 100).toFixed(2);
+    
+    setCapTable(newCapTable);
+    setRound(3);
+  };
+
+  // Exit Waterfall Calculator
+  const calculateWaterfall = (exitValue) => {
+    const totalShares = calculateFullyDiluted(capTable);
+    let remaining = exitValue;
+    const distribution = [];
+    
+    // Sort investors by seniority (Series B first, then A, then Seed)
+    const sortedInvestors = [...capTable.investors].sort((a, b) => {
+      const order = { 'Series B': 0, 'Series A': 1, 'Seed': 2 };
+      return order[a.round] - order[b.round];
+    });
+    
+    // Pay liquidation preferences
+    for (const investor of sortedInvestors) {
+      if (investor.preferenceAmount > 0 && remaining > 0) {
+        const payment = Math.min(investor.preferenceAmount, remaining);
+        distribution.push({
+          stakeholder: investor.name,
+          amount: payment,
+          reason: `${investor.liquidationPreference} preference`
+        });
+        remaining -= payment;
+        
+        // If participating preferred, they also get to participate in remainder
+        if (investor.liquidationPreference.includes('participating') && remaining > 0) {
+          const participation = (investor.shares / totalShares) * remaining;
+          distribution.push({
+            stakeholder: investor.name,
+            amount: participation,
+            reason: 'Participation in remaining proceeds'
+          });
+          remaining -= participation;
+        }
+      }
+    }
+    
+    // Distribute remaining to common shareholders (founders + converted preferred + options)
+    if (remaining > 0) {
+      const commonShares = capTable.founders.reduce((sum, f) => sum + f.shares, 0) + 
+                          capTable.optionPool.allocated;
+      
+      capTable.founders.forEach(founder => {
+        const founderPayout = (founder.shares / totalShares) * remaining;
+        distribution.push({
+          stakeholder: founder.name,
+          amount: founderPayout,
+          reason: 'Common stock distribution'
+        });
+      });
+    }
+    
+    return distribution;
+  };
+
+  // Render different stages
+  const renderStage = () => {
+    switch(round) {
+      case 0:
+        return (
+          <div className="space-y-6">
+            <Card className="border-l-4 border-l-blue-500">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Initial Cap Table - January 2023
+                </CardTitle>
+                <CardDescription>
+                  FitTech Solutions has been incorporated with 10M authorized shares
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {capTable.founders.map((founder, idx) => (
+                    <div key={idx} className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                      <div>
+                        <div className="font-semibold">{founder.name}</div>
+                        <div className="text-sm text-gray-600">{founder.role}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold text-blue-600">{founder.percentage}%</div>
+                        <div className="text-sm text-gray-600">{founder.shares.toLocaleString()} shares</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-l-4 border-l-green-500">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="w-5 h-5" />
+                  Seed Round - June 2023
+                </CardTitle>
+                <CardDescription>
+                  Angel investors want to invest $1.5M at a $4.5M pre-money valuation
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Alert className="mb-4">
+                  <AlertTriangle className="w-4 h-4" />
+                  <AlertDescription>
+                    <strong>Critical Decision:</strong> Investors insist on a 15% employee option pool. 
+                    Should it be created pre-money or post-money?
+                  </AlertDescription>
+                </Alert>
+
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="p-4 border rounded bg-yellow-50">
+                    <h4 className="font-semibold mb-2">Pre-Money Pool</h4>
+                    <p className="text-sm text-gray-700">
+                      Pool created before valuation. Founders diluted more, but cleaner cap table.
+                    </p>
+                  </div>
+                  <div className="p-4 border rounded bg-blue-50">
+                    <h4 className="font-semibold mb-2">Post-Money Pool</h4>
+                    <p className="text-sm text-gray-700">
+                      Pool created after investment. Founders less diluted, investors share the burden.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <Button 
+                    onClick={() => handleSeedRound('pre-money')}
+                    className="flex-1"
+                    variant="outline"
+                  >
+                    Create Pre-Money Pool
+                  </Button>
+                  <Button 
+                    onClick={() => handleSeedRound('post-money')}
+                    className="flex-1"
+                  >
+                    Create Post-Money Pool
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        );
+
+      case 1:
+        const totalSharesSeed = calculateFullyDiluted(capTable);
+        return (
+          <div className="space-y-6">
+            <Card className="border-l-4 border-l-green-500">
+              <CardHeader>
+                <CardTitle>Post-Seed Cap Table</CardTitle>
+                <CardDescription>
+                  You chose {decisions.seedOptionPoolTiming} option pool creation
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="font-semibold text-lg mb-2">Founders</div>
+                  {capTable.founders.map((founder, idx) => (
+                    <div key={idx} className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                      <span>{founder.name}</span>
+                      <div className="text-right">
+                        <span className="font-bold text-blue-600">{founder.percentage}%</span>
+                        <span className="text-sm text-gray-600 ml-2">
+                          (was {idx === 0 ? '40' : idx === 1 ? '35' : '25'}%)
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  <div className="font-semibold text-lg mt-4 mb-2">Investors</div>
+                  {capTable.investors.map((inv, idx) => (
+                    <div key={idx} className="flex justify-between items-center p-3 bg-green-50 rounded">
+                      <div>
+                        <div className="font-semibold">{inv.name}</div>
+                        <div className="text-sm text-gray-600">
+                          ${inv.investment.toLocaleString()} @ ${inv.pricePerShare.toFixed(4)}/share
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold text-green-600">{inv.percentage}%</div>
+                        <div className="text-sm text-gray-600">{inv.liquidationPreference}</div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  <div className="flex justify-between items-center p-3 bg-purple-50 rounded">
+                    <span className="font-semibold">Option Pool</span>
+                    <span className="font-bold text-purple-600">
+                      {(capTable.optionPool.reserved / totalSharesSeed * 100).toFixed(2)}%
+                    </span>
+                  </div>
+                </div>
+
+                <Button 
+                  onClick={() => setShowCalculations(!showCalculations)}
+                  variant="outline"
+                  className="w-full mt-4"
+                >
+                  {showCalculations ? 'Hide' : 'Show'} Detailed Calculations
+                </Button>
+
+                {showCalculations && (
+                  <div className="mt-4 p-4 bg-gray-50 rounded text-sm space-y-2">
+                    <div><strong>Total Fully Diluted Shares:</strong> {totalSharesSeed.toLocaleString()}</div>
+                    <div><strong>Founder Dilution:</strong> Founders went from 100% to {
+                      capTable.founders.reduce((sum, f) => sum + parseFloat(f.percentage), 0).toFixed(2)
+                    }%</div>
+                    <div><strong>Key Insight:</strong> {decisions.seedOptionPoolTiming === 'pre-money' 
+                      ? 'Founders bore the full cost of the option pool dilution'
+                      : 'Option pool dilution was shared between founders and investors'
+                    }</div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border-l-4 border-l-blue-500">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingDown className="w-5 h-5" />
+                  Series A - March 2024
+                </CardTitle>
+                <CardDescription>
+                  Strong traction! Summit Ventures offers $8M at $20M pre-money
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Alert className="mb-4">
+                  <AlertTriangle className="w-4 h-4" />
+                  <AlertDescription>
+                    <strong>Situation:</strong> Only 5% of the option pool has been used. 
+                    VCs want the pool increased to 18% total to hire senior engineers. 
+                    This will dilute founders further before the investment.
+                  </AlertDescription>
+                </Alert>
+
+                <div className="space-y-4">
+                  <div className="p-4 border rounded">
+                    <h4 className="font-semibold mb-2">Investment Terms</h4>
+                    <ul className="text-sm space-y-1 text-gray-700">
+                      <li>• Investment: $8,000,000</li>
+                      <li>• Pre-money: $20,000,000</li>
+                      <li>• Post-money: $28,000,000</li>
+                      <li>• Liquidation: 1x participating preferred</li>
+                      <li>• Anti-dilution: Broad-based weighted average</li>
+                    </ul>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <Button 
+                      onClick={() => handleSeriesA(false)}
+                      variant="outline"
+                      className="flex-1"
+                    >
+                      Keep 15% Pool (Risky for hiring)
+                    </Button>
+                    <Button 
+                      onClick={() => handleSeriesA(true)}
+                      className="flex-1"
+                    >
+                      Increase to 18% Pool
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        );
+
+      case 2:
+        const totalSharesSeriesA = calculateFullyDiluted(capTable);
+        return (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Post-Series A Cap Table</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="font-semibold text-lg">Founders</div>
+                  {capTable.founders.map((founder, idx) => (
+                    <div key={idx} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                      <span>{founder.name}</span>
+                      <span className="font-bold">{founder.percentage}%</span>
+                    </div>
+                  ))}
+                  
+                  <div className="font-semibold text-lg mt-4">Investors</div>
+                  {capTable.investors.map((inv, idx) => (
+                    <div key={idx} className="flex justify-between items-center p-2 bg-green-50 rounded">
+                      <span>{inv.name} ({inv.round})</span>
+                      <span className="font-bold">{inv.percentage}%</span>
+                    </div>
+                  ))}
+                  
+                  <div className="flex justify-between items-center p-2 bg-purple-50 rounded">
+                    <span>Option Pool ({capTable.optionPool.allocated ? '5% allocated, ' : ''} rest reserved)</span>
+                    <span className="font-bold">
+                      {(capTable.optionPool.reserved / totalSharesSeriesA * 100).toFixed(2)}%
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-l-4 border-l-red-500">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5" />
+                  Series B - Down Round Crisis (November 2024)
+                </CardTitle>
+                <CardDescription>
+                  Growth stalled. Valuation dropped to $18M (from $28M). Only 4 months runway left.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Alert className="mb-4 bg-red-50">
+                  <AlertTriangle className="w-4 h-4 text-red-600" />
+                  <AlertDescription>
+                    <strong>Critical Situation:</strong> Phoenix Capital will invest $5M at $18M pre-money.
+                    This triggers anti-dilution protection and pay-to-play provisions.
+                  </AlertDescription>
+                </Alert>
+
+                <div className="space-y-4">
+                  <div className="p-4 border rounded">
+                    <h4 className="font-semibold mb-2">Investment Terms</h4>
+                    <ul className="text-sm space-y-1">
+                      <li>• Investment: $5,000,000</li>
+                      <li>• Pre-money: $18,000,000 (DOWN from $28M)</li>
+                      <li>• Liquidation: 2x non-participating</li>
+                      <li>• <span className="text-red-600 font-semibold">Pay-to-play:</span> Series A must invest pro-rata or convert to common</li>
+                    </ul>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="font-semibold">Who will participate in the down round?</div>
+                    
+                    <label className="flex items-center p-3 border rounded cursor-pointer hover:bg-gray-50">
+                      <input 
+                        type="checkbox" 
+                        className="mr-3"
+                        onChange={(e) => setDecisions({
+                          ...decisions, 
+                          downRoundParticipation: {
+                            ...decisions.downRoundParticipation,
+                            summitVentures: e.target.checked
+                          }
+                        })}
+                      />
+                      <div className="flex-1">
+                        <div className="font-semibold">Summit Ventures (Series A lead)</div>
+                        <div className="text-sm text-gray-600">Will invest additional $2M to maintain position</div>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center p-3 border rounded cursor-pointer hover:bg-gray-50">
+                      <input 
+                        type="checkbox" 
+                        className="mr-3"
+                        onChange={(e) => setDecisions({
+                          ...decisions, 
+                          downRoundParticipation: {
+                            ...decisions.downRoundParticipation,
+                            seedAngels: e.target.checked
+                          }
+                        })}
+                      />
+                      <div className="flex-1">
+                        <div className="font-semibold">Seed Angels</div>
+                        <div className="text-sm text-gray-600">
+                          {decisions.downRoundParticipation.seedAngels 
+                            ? 'Will participate to keep preferred status' 
+                            : 'Will NOT participate (convert to common stock)'}
+                        </div>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center p-3 border rounded cursor-pointer hover:bg-gray-50">
+                      <input 
+                        type="checkbox" 
+                        className="mr-3"
+                        onChange={(e) => setDecisions({
+                          ...decisions, 
+                          downRoundParticipation: {
+                            ...decisions.downRoundParticipation,
+                            sarah: e.target.checked
+                          }
+                        })}
+                      />
+                      <div className="flex-1">
+                        <div className="font-semibold">Sarah Chen (CEO)</div>
+                        <div className="text-sm text-gray-600">Will invest $500K from personal savings</div>
+                      </div>
+                    </label>
+                  </div>
+
+                  <Button 
+                    onClick={() => handleSeriesB(decisions.downRoundParticipation)}
+                    className="w-full"
+                    disabled={!decisions.downRoundParticipation.summitVentures && 
+                              !decisions.downRoundParticipation.seedAngels && 
+                              !decisions.downRoundParticipation.sarah}
+                  >
+                    Execute Down Round <ArrowRight className="ml-2 w-4 h-4" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        );
+
+      case 3:
+        const totalSharesFinal = calculateFullyDiluted(capTable);
+        const sarah = capTable.founders.find(f => f.name === 'Sarah Chen');
+        const sarahInitialPercent = 40;
+        
+        return (
+          <div className="space-y-6">
+            <Card className="border-l-4 border-l-purple-500">
+              <CardHeader>
+                <CardTitle>Final Cap Table - Post Series B</CardTitle>
+                <CardDescription>
+                  The complete ownership structure after the down round
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="font-semibold text-lg">Founders</div>
+                  {capTable.founders.map((founder, idx) => (
+                    <div key={idx} className="p-3 bg-gray-50 rounded">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <div className="font-semibold">{founder.name}</div>
+                          {founder.personalInvestment && (
+                            <div className="text-xs text-green-600">
+                              + ${founder.personalInvestment.toLocaleString()} personal investment
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-blue-600">{founder.percentage}%</div>
+                          <div className="text-xs text-gray-600">
+                            (started at {idx === 0 ? '40' : idx === 1 ? '35' : '25'}%)
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  <div className="font-semibold text-lg mt-4">Investors</div>
+                  {capTable.investors.map((inv, idx) => (
+                    <div key={idx} className="p-3 bg-green-50 rounded">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <div className="font-semibold">{inv.name} ({inv.round})</div>
+                          <div className="text-xs text-gray-600">{inv.liquidationPreference}</div>
+                          {inv.followOn && (
+                            <div className="text-xs text-green-600">
+                              + ${inv.followOn.toLocaleString()} follow-on
+                            </div>
+                          )}
+                          {inv.antiDilutionAdjustment && (
+                            <div className="text-xs text-blue-600">
+                              + {inv.antiDilutionAdjustment.toLocaleString()} anti-dilution shares
+                            </div>
+                          )}
+                          {inv.convertedToCommon && (
+                            <div className="text-xs text-red-600 font-semibold">
+                              ⚠ Converted to common (didn't participate)
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-green-600">{inv.percentage}%</div>
+                          <div className="text-xs text-gray-600">
+                            ${inv.investment.toLocaleString()} invested
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  <div className="flex justify-between items-center p-3 bg-purple-50 rounded">
+                    <span className="font-semibold">Option Pool (reserved)</span>
+                    <span className="font-bold text-purple-600">
+                      {capTable.optionPool.percentage}%
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-6 p-4 bg-blue-50 rounded">
+                  <h4 className="font-semibold mb-2">Key Insights</h4>
+                  <ul className="text-sm space-y-1">
+                    <li>• Sarah's ownership: {sarahInitialPercent}% → {sarah.percentage}% 
+                      ({((sarahInitialPercent - parseFloat(sarah.percentage)) / sarahInitialPercent * 100).toFixed(1)}% dilution)
+                    </li>
+                    <li>• Total capital raised: ${
+                      capTable.investors.reduce((sum, inv) => sum + inv.investment, 0).toLocaleString()
+                    }</li>
+                    <li>• Company valuation dropped from $28M → $18M (down round)</li>
+                    <li className="text-red-600 font-semibold">
+                      • Liquidation preference stack: ${
+                        capTable.investors.reduce((sum, inv) => sum + (inv.preferenceAmount || 0), 0).toLocaleString()
+                      } must be paid before common gets anything
+                    </li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-l-4 border-l-orange-500">
+              <CardHeader>
+                <CardTitle>Exit Scenario Analysis</CardTitle>
+                <CardDescription>
+                  See how different exit values affect each stakeholder
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {[10000000, 25000000, 50000000, 100000000].map(exitValue => {
+                    const waterfall = calculateWaterfall(exitValue);
+                    const sarahTotal = waterfall
+                      .filter(d => d.stakeholder === 'Sarah Chen')
+                      .reduce((sum, d) => sum + d.amount, 0);
+                    
+                    return (
+                      <div key={exitValue} className="p-4 border rounded">
+                        <h4 className="font-semibold text-lg mb-2">
+                          Exit at ${(exitValue / 1000000).toFixed(0)}M
+                        </h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span>Sarah's payout:</span>
+                            <span className="font-bold">${(sarahTotal / 1000000).toFixed(2)}M</span>
+                          </div>
+                          <div className="flex justify-between text-gray-600">
+                            <span>Return on her initial equity:</span>
+                            <span>{((sarahTotal / (exitValue * 0.40)) * 100).toFixed(1)}% of what she would have gotten at founding</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <Alert className="mt-6">
+                  <AlertDescription>
+                    <strong>Key Lesson:</strong> Notice how liquidation preferences create a "preference stack" 
+                    that must be paid before common shareholders (founders) receive anything. In low exit scenarios, 
+                    founders can get wiped out entirely despite owning significant percentage of the company.
+                  </AlertDescription>
+                </Alert>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Assignment Questions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4 text-sm">
+                  <div className="p-3 bg-gray-50 rounded">
+                    <strong>1. Dilution Analysis:</strong> Calculate Sarah's total dilution from founding to Series B. 
+                    What percentage was due to investments vs. option pool creation?
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded">
+                    <strong>2. Decision Evaluation:</strong> Was creating the option pool pre-money or post-money 
+                    in the Seed round the right decision? Justify with calculations.
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded">
+                    <strong>3. Anti-Dilution Impact:</strong> How many additional shares did Summit Ventures receive 
+                    due to anti-dilution protection? Show the weighted average calculation.
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded">
+                    <strong>4. Exit Threshold:</strong> At what exit valuation does Sarah make at least $5M? 
+                    How does this compare to what she would have made if there was no liquidation preference stack?
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded">
+                    <strong>5. Alternative Structures:</strong> What other financing structures could have been 
+                    used instead of the Series B down round? (Consider: bridge loans, convertible notes, SAFE, etc.)
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded">
+                    <strong>6. Ethical Considerations:</strong> Was the pay-to-play provision fair to smaller 
+                    angel investors who may not have had capital to participate? Discuss.
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto p-6">
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold mb-2">FitTech Solutions Cap Table Simulation</h1>
+        <p className="text-gray-600">
+          An interactive learning exercise for entrepreneurial finance students
+        </p>
+      </div>
+
+      {/* Progress indicator */}
+      <div className="mb-8 flex items-center justify-between">
+        {['Initial', 'Seed', 'Series A', 'Series B', 'Analysis'].map((stage, idx) => (
+          <div key={idx} className="flex items-center">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold
+              ${idx <= round ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+              {idx + 1}
+            </div>
+            {idx < 4 && (
+              <div className={`w-20 h-1 ${idx < round ? 'bg-blue-600' : 'bg-gray-200'}`} />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {renderStage()}
+    </div>
+  );
+};
+
+export default CapTableSimulation;
